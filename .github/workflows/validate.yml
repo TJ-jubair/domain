@@ -44,7 +44,7 @@ jobs:
           CF_SECRET: ${{ secrets.DOMAIN }}
           CF_VAR: ${{ vars.DOMAIN }}
         run: |
-          # Use the secret if available; otherwise, fall back to the variable
+          # This checks BOTH the Secrets tab and the Variables tab
           CF_TOKEN="${CF_SECRET:-$CF_VAR}"
           
           if [ -z "$CF_TOKEN" ]; then
