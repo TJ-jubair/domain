@@ -4,7 +4,7 @@ var DSP_CLOUDFLARE = NewDnsProvider('cloudflare');
 
 // 1. Core Default Records
 var totalRecords = [
-    CNAME('www', 'code-space.me'),
+    CNAME('www', 'code-space.me.'),
     
     // IGNORE manually configured Cloudflare Worker routes
     IGNORE('code-space.me', 'WORKER'),
