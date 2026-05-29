@@ -3,9 +3,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -18,15 +15,7 @@ jobs:
       - name: Setup Node.js Environment
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
-
-      - name: Isolate Pull Request Changes
-        run: |
-          # GitHub Actions checks out a temporary merge commit for PRs.
-          # HEAD^1 points exactly to the main branch state right before your PR changes.
-          # Forcing refs to HEAD^1 ensures validator.js only evaluates your files.
-          git update-ref refs/remotes/origin/main HEAD^1
-          git branch -f main HEAD^1 || true
+          node-version: '20'
 
       - name: Install Linting Packages
         run: npm install
@@ -42,32 +31,26 @@ jobs:
           const fs = require('fs');
           const path = require('path');
           const domainsDir = path.join(process.cwd(), 'domains');
-           
-          if (!fs.existsSync(domainsDir)) {
-            console.error('❌ Error: domains folder missing.');
-            process.exit(1);
-          }
-           
+          if (!fs.existsSync(domainsDir)) process.exit(1);
           const files = fs.readdirSync(domainsDir);
-          const result = [];
-           
-          files.forEach(f => {
-            if(f.endsWith('.json') && f !== 'example.json') {
-              try {
-                const data = JSON.parse(fs.readFileSync(path.join(domainsDir, f), 'utf8'));
-                if (data.records) {
-                  const calculatedSubdomain = f.substring(0, f.lastIndexOf('.json')).toLowerCase().trim();
-                  result.push({ 
-                    subdomain: calculatedSubdomain, 
-                    records: data.records 
-                  });
-                }
-              } catch(err) {
-                console.error('Malformed file skipped: ' + f);
-              }
-            }
-          });
-           
+          const result = files
+            .filter(f => f.endsWith('.json') && f !== 'example.json')
+            .map(f => ({ subdomain: f.replace('.json', '').toLowerCase(), records: JSON.parse(fs.readFileSync(path.join(domainsDir, f), 'utf8')).records }));
           fs.writeFileSync('dist-domains.json', JSON.stringify(result, null, 2));
-          console.log('✅ Validation passed! Ready for manual merge.');
           "
+
+      - name: Validate Secret and Create creds.json
+        env:
+          CF_TOKEN: ${{ secrets.DOMAIN }}
+        run: |
+          if [ -z "$CF_TOKEN" ]; then
+            echo "::error::Secret 'DOMAIN' is empty or not accessible!"
+            exit 1
+          fi
+          echo '{"cloudflare": {"TYPE": "CLOUDFLAREAPI", "apitoken": "'"$CF_TOKEN"'"}}' > creds.json
+
+      - name: Install DNSControl
+        uses: gacts/install-dnscontrol@v1
+
+      - name: DNSControl Lint & Preview Simulation
+        run: dnscontrol preview
