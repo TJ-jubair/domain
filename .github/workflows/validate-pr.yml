@@ -44,24 +44,20 @@ jobs:
           const addComment = (message) => { try { execSync(`gh pr comment ${prNum} --body "${message}"`); } catch(e) {} };
 
           try {
-            // 1. Fetch current labels
             const labels = execSync(`gh pr view ${prNum} --json labels --jq '.labels[].name'`).toString().split('\n');
 
-            // 2. Bypass Logic
             if (labels.includes('bypass')) {
-                console.log('✅ Bypass label detected. Skipping ownership verification.');
+                console.log('✅ Bypass detected.');
                 process.exit(0);
             }
 
-            // 3. Draft Logic
             if (labels.includes('draft')) {
-                console.log('⚠️ Draft label detected. Closing PR.');
-                addComment(`🚧 **Status: Draft**\n\nThis PR is marked as a draft. Closing until it is ready for review.`);
+                console.log('⚠️ Draft detected. Closing.');
+                addComment(`🚧 **Status: Draft**\n\nThis PR is marked as a draft. Closing until ready.`);
                 closePR();
                 process.exit(0);
             }
 
-            // 4. Ownership Verification Logic
             execSync('git fetch origin main');
             const getFiles = (filter) => {
               try {
@@ -70,46 +66,58 @@ jobs:
               } catch(e) { return []; }
             };
 
-            const addedFiles = getFiles('A');
-            const modifiedFiles = getFiles('M');
-            const deletedFiles = getFiles('D');
             const isDomainFile = f => f.includes('domains/') && f.endsWith('.json') && !f.endsWith('example.json');
-
-            const newDomains = addedFiles.filter(isDomainFile);
-            const existingDomainsChanged = [...modifiedFiles, ...deletedFiles].filter(isDomainFile);
-
-            if (newDomains.length > 0) addLabel('type: new-domain');
-            if (existingDomainsChanged.length > 0) addLabel('type: domain-update');
+            const existingDomainsChanged = [...getFiles('M'), ...getFiles('D')].filter(isDomainFile);
 
             let ownershipViolation = false;
             let violatedFile = '';
             let trueOwner = '';
+            let errorType = '';
 
             for (const file of existingDomainsChanged) {
               try {
                 const originalContent = execSync(`git show origin/main:${file}`).toString();
                 const originalJson = JSON.parse(originalContent);
+                
                 if (originalJson.owner && originalJson.owner.toLowerCase() !== prAuthor.toLowerCase()) {
                   ownershipViolation = true;
                   violatedFile = file;
                   trueOwner = originalJson.owner;
+                  errorType = 'unauthorized';
                   break; 
                 }
-              } catch (err) {}
+              } catch (err) {
+                ownershipViolation = true;
+                violatedFile = file;
+                trueOwner = "Unknown";
+                errorType = 'malformed';
+                break;
+              }
             }
 
             if (ownershipViolation) {
-              console.log(`❌ Security Alert: @${prAuthor} attempted to modify ${violatedFile} owned by @${trueOwner}`);
+              console.log(`❌ Invalid Record Detected: ${violatedFile}`);
               addLabel('Rejected');
-              const message = `🛑 **Domain Ownership Verification Failed**\n\n` +
-                              `Hi @${prAuthor}, you are trying to alter or delete \`${violatedFile}\`, which belongs to @${trueOwner}.\n\n` +
-                              `CC: @${maintainer} — unauthorized modification attempt caught. Closing this Pull Request automatically.`;
+              addLabel('Invalid Record');
+
+              const reason = errorType === 'malformed' 
+                ? "The JSON structure is malformed or invalid." 
+                : `You are attempting to modify a record that belongs to @${trueOwner}.`;
+
+              const message = `🛑 **Domain Record Invalid**\n\n` +
+                              `The file \`${violatedFile}\` failed validation checks.\n\n` +
+                              `**Reason:** ${reason}\n\n` +
+                              `CC: @${maintainer} — Closing this PR. Please ensure you are only modifying your own records and using valid JSON syntax.`;
+              
               addComment(message);
               closePR();
               process.exit(1);
             }
 
-            console.log('✅ Ownership verification passed.');
+            if (getFiles('A').filter(isDomainFile).length > 0) addLabel('type: new-domain');
+            if (existingDomainsChanged.length > 0) addLabel('type: domain-update');
+
+            console.log('✅ Verification passed.');
           } catch (error) {
             console.error('System error:', error.message);
             process.exit(1);
