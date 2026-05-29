@@ -4,6 +4,10 @@ on:
   pull_request_target:
     branches: [ main ]
 
+permissions:
+  contents: read
+  pull-requests: write # Required to add/remove labels
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -11,15 +15,13 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          # pull_request_target runs in the context of the main branch,
-          # so we explicitly fetch the PR branch depth to run accurate diffs
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24 # ⬆️ Updated to 24 to prevent future deprecation errors
+          node-version: 24
           cache: 'npm'
 
       - name: Install Dependencies
@@ -33,8 +35,38 @@ jobs:
         run: node util/get-pr-files.js
 
       - name: Run Validation Tests
-        run: npm run validate # 🛠️ Swapped npx ava for your custom package.json script
+        id: validation # Added ID to reference this step's outcome
+        run: npm run validate
         env:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           PR_AUTHOR_ID: ${{ github.event.pull_request.user.id }}
           PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+
+      - name: Handle Ownership Labels
+        if: always() # Ensures this runs even if validation fails
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const isSuccess = "${{ steps.validation.outcome }}" === "success";
+            const labelToAdd = isSuccess ? "ownership: verified" : "ownership: unauthorized";
+            const labelToRemove = isSuccess ? "ownership: unauthorized" : "ownership: verified";
+
+            // Remove the opposite label
+            try {
+              await github.rest.issues.removeLabel({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: labelToRemove
+              });
+            } catch (e) {
+              // Label didn't exist, ignore
+            }
+
+            // Add the appropriate label
+            await github.rest.issues.addLabels({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: [labelToAdd]
+            });
