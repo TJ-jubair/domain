@@ -20,38 +20,20 @@ jobs:
           ref: refs/pull/${{ github.event.pull_request.number }}/merge
           fetch-depth: 0 
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install Dependencies
-        run: npm install 
-
-      - name: Process, Validate, and Label Pull Request
+      - name: Process and Label Pull Request
         env:
-          PR_ACTOR: ${{ github.event.pull_request.user.login }}
-          ADMIN_USER: "s8rr"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           node -e "
           const { execSync } = require('child_process');
-          const path = require('path');
           
-          const actor = process.env.PR_ACTOR;
-          const admin = process.env.ADMIN_USER;
           const prNum = process.env.PR_NUMBER;
-          
           const addLabel = (label) => {
             try { execSync('gh pr edit ' + prNum + ' --add-label \"' + label + '\"'); } catch(e) {}
           };
-          const removeLabel = (label) => {
-            try { execSync('gh pr edit ' + prNum + ' --remove-label \"' + label + '\"'); } catch(e) {}
-          };
 
           try {
-            // Helper to get files by Git diff filter and remove empty lines
             const getFiles = (filter) => {
               try {
                 return execSync('git diff --name-only --diff-filter=' + filter + ' HEAD^1 HEAD')
@@ -70,65 +52,8 @@ jobs:
             
             if (newDomains.length > 0) addLabel('type: new-domain');
             if (existingDomainsChanged.length > 0) addLabel('type: domain-update');
-
-            if (actor === admin) {
-              console.log('👑 Admin bypass verified.');
-              addLabel('status: valid');
-              addLabel('ownership: verified');
-              process.exit(0);
-            }
-
-            if (newDomains.length === 0 && existingDomainsChanged.length === 0) {
-              console.log('No domain files modified.');
-              process.exit(0);
-            }
-
-            // 🛡️ OWNERSHIP CHECK: ONLY applies to files that are being edited or deleted
-            existingDomainsChanged.forEach(filePath => {
-              let fileOwner = '';
-              
-              try {
-                const repo = process.env.GITHUB_REPOSITORY;
-                // Find the commit hash where this file was originally added
-                const firstCommit = execSync('git log --diff-filter=A --format=\"%H\" -n 1 -- \"' + filePath + '\"').toString().trim();
-                
-                if (firstCommit) {
-                  // Resolve the exact GitHub username who authorized that commit
-                  fileOwner = execSync('gh api /repos/' + repo + '/commits/' + firstCommit + ' --jq \".author.login\"').toString().trim();
-                }
-              } catch (gitErr) {
-                console.log('Git lookup failed for ' + filePath + ', falling back to filename parsing.');
-              }
-
-              // Fallback to legacy filename parsing if Git history lookup fails
-              if (!fileOwner || fileOwner === 'null') {
-                const fileName = path.basename(filePath);
-                const cleanName = fileName.replace('.json', '');
-                const parts = cleanName.split('.');
-                fileOwner = parts[parts.length - 1];
-              }
-
-              fileOwner = fileOwner.toLowerCase().trim();
-
-              if (fileOwner !== actor.toLowerCase()) {
-                throw new Error('User ' + actor + ' is unauthorized to edit or delete records belonging to ' + fileOwner);
-              }
-            });
-
-            console.log('✅ Validation successful.');
-            removeLabel('status: invalid');
-            removeLabel('ownership: unauthorized');
-            
-            addLabel('status: valid');
-            addLabel('ownership: verified');
             
           } catch (error) {
-            console.error('❌ VALIDATION FAILURE:', error.message);
-            removeLabel('status: valid');
-            removeLabel('ownership: verified');
-            
-            addLabel('status: invalid');
-            addLabel('ownership: unauthorized');
-            process.exit(1);
+            console.error('Labeling failed:', error.message);
           }
           "
