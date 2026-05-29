@@ -1,31 +1,31 @@
 name: Validate Pull Request Domain Ownership
 
 on:
-  pull_request:
-    branches:
-      - main
+  pull_request_target: # 👈 Allows forks to trigger this workflow with secure write permissions
+    types: [opened, synchronize, reopened] # 👈 Automatically runs the moment a PR is created or updated
     paths:
       - 'domains/**'
 
-# ⚠️ CRITICAL: Gives the action clearance to write labels to your PR dashboard list
 permissions:
-  pull-requests: write
+  pull-requests: write # 👈 Forces GitHub to grant this specific runner label-writing capabilities
   contents: read
 
 jobs:
   validate-ownership:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout PR Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          # Safely checks out the exact merge commit of the incoming pull request
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          fetch-depth: 2 # Fetches the commit and its parent so we can diff them cleanly
 
       - name: Process, Validate, and Label Pull Request
         env:
-          PR_ACTOR: ${{ github.actor }}
+          PR_ACTOR: ${{ github.event.pull_request.user.login }} # Isolate the true PR author
           ADMIN_USER: "s8rr"
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Authenticates the built-in gh CLI
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           node -e "
@@ -36,7 +36,6 @@ jobs:
           const admin = process.env.ADMIN_USER;
           const prNum = process.env.PR_NUMBER;
           
-          // Function to safely apply a label to the PR via GitHub CLI
           const addLabel = (label) => {
             try { execSync('gh pr edit ' + prNum + ' --add-label \"' + label + '\"'); } catch(e) {}
           };
@@ -45,9 +44,9 @@ jobs:
           };
 
           try {
-            // 1. Detect modification types to add contextual type labels
-            const addedFiles = execSync('git diff --name-only --diff-filter=A origin/main...HEAD').toString().trim();
-            const modifiedFiles = execSync('git diff --name-only --diff-filter=M origin/main...HEAD').toString().trim();
+            // Evaluates changes between the PR commit and its target branch parent commit
+            const addedFiles = execSync('git diff --name-only --diff-filter=A HEAD^1 HEAD').toString().trim();
+            const modifiedFiles = execSync('git diff --name-only --diff-filter=M HEAD^1 HEAD').toString().trim();
             
             if (addedFiles.includes('domains/')) addLabel('type: new-domain');
             if (modifiedFiles.includes('domains/')) addLabel('type: domain-update');
@@ -58,12 +57,16 @@ jobs:
               process.exit(0);
             }
 
-            // 2. Run the code-ownership validation loops
-            const changedFiles = execSync('git diff --name-only origin/main...HEAD')
+            const changedFiles = execSync('git diff --name-only HEAD^1 HEAD')
               .toString()
               .trim()
               .split('\n')
               .filter(f => f.startsWith('domains/') && f.endsWith('.json') && !f.endsWith('example.json'));
+
+            if (changedFiles.length === 0) {
+              console.log('No domain files modified.');
+              process.exit(0);
+            }
 
             changedFiles.forEach(filePath => {
               const fileName = path.basename(filePath);
