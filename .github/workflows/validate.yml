@@ -19,11 +19,11 @@ jobs:
       - name: Setup Node.js Environment
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24' # ⬆️ Bumped to 24 to fix the future deprecation warning
           cache: 'npm'
 
       - name: Install Dependencies
-        run: npm install
+        run: npm ci # 🧹 Swapped to npm ci for a more reliable automated build
 
       - name: Fetch Target Branch for Diffing
         run: git fetch origin main:origin/main
@@ -31,8 +31,8 @@ jobs:
       - name: Extract PR File Diffs
         run: node util/get-pr-files.js
 
-      - name: Run Core Code Validator (AVA)
-        run: npx ava
+      - name: Run Core Code Validator
+        run: npm run validate # 🛠️ Swapped npx ava for your custom validation script
         env:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           PR_AUTHOR_ID: ${{ github.event.pull_request.user.id }}
