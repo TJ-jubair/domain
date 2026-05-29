@@ -3,7 +3,6 @@ on:
   pull_request:
     branches: [main]
 
-# Gives the workflow permission to assign you to the Pull Request
 permissions:
   pull-requests: write
 
@@ -63,9 +62,7 @@ jobs:
               try {
                 const data = JSON.parse(fs.readFileSync(path.join(domainsDir, f), 'utf8'));
                 if (data.records) {
-                  // Extracts full nested subdomain handling dots (e.g. '_vercel.example.json' -> '_vercel.example')
                   const calculatedSubdomain = f.substring(0, f.lastIndexOf('.json')).toLowerCase().trim();
-                  
                   result.push({ 
                     subdomain: calculatedSubdomain, 
                     records: data.records 
@@ -80,3 +77,48 @@ jobs:
           fs.writeFileSync('dist-domains.json', JSON.stringify(result, null, 2));
           console.log('✅ Validation passed! Ready for manual merge.');
           "
+
+      - name: Post Error Comment on PR
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const errorFile = 'validation_error.txt';
+            
+            if (fs.existsSync(errorFile)) {
+              const errorBody = fs.readFileSync(errorFile, 'utf8');
+              
+              const commentHeader = `### ⚠️ Domain Registry Validation Failed`;
+              const commentBody = `${commentHeader}\n\nHi @${context.actor}, your pull request contains validation errors:\n\n> ${errorBody}\n\nPlease fix this error and push the update to your branch to re-trigger checks.`;
+              
+              // Get all comments on the PR
+              const comments = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+              });
+              
+              // Look for a comment previously made by this bot
+              const existingComment = comments.data.find(c => 
+                c.user.login === 'github-actions[bot]' && c.body.includes(commentHeader)
+              );
+              
+              if (existingComment) {
+                // Update the old error comment with the new information
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existingComment.id,
+                  body: commentBody
+                });
+              } else {
+                // Post a brand new comment if none exists yet
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: commentBody
+                });
+              }
+            }
