@@ -19,7 +19,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24 # ⬆️ Updated to 24 to prevent future deprecation errors
           cache: 'npm'
 
       - name: Install Dependencies
@@ -33,7 +33,7 @@ jobs:
         run: node util/get-pr-files.js
 
       - name: Run Validation Tests
-        run: npx ava
+        run: npm run validate # 🛠️ Swapped npx ava for your custom package.json script
         env:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           PR_AUTHOR_ID: ${{ github.event.pull_request.user.id }}
