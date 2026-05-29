@@ -3,8 +3,14 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+# 🚀 FIXED: Added issues and contents permissions
 permissions:
-  pull-requests: write
+  contents: read      # Required for actions/checkout to read your repository code
+  issues: write        # Required to assign users via the Issues API endpoint
+  pull-requests: write # Required to post feedback comments on the PR
 
 jobs:
   test:
@@ -29,7 +35,7 @@ jobs:
       - name: Setup Node.js Environment
         uses: actions/setup-node@v4
         with:
-          node-version: '24' # 🚀 Upgraded to Node 24 to resolve the GitHub deprecation notice
+          node-version: '24'
 
       - name: Fetch Remote Base Branch
         run: git fetch origin main
