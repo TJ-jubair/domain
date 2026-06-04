@@ -17,7 +17,7 @@ Fork this repository to your GitHub account, then clone it locally:
 
 ```bash
 git clone https://github.com/s8rr/domain.git
-cd akjon-registry
+cd domain
 ```
 
 ### 2. Create Your Record File
